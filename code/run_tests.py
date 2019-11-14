@@ -12,13 +12,40 @@ import logging
 import numpy as np
 import time
 import itertools
+import tensorflow as tf
+import os
+import json
+import subprocess
 
-logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
+#logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+
+logger = logging.getLogger('test_runner')
+logger.setLevel(logging.DEBUG)
+
+logger.propagate = False
+
+fh = logging.FileHandler('test_runner.log')
+fh.setLevel(logging.INFO)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+
+logger.addHandler(fh)
+logger.addHandler(ch)
 
 NUM_TESTS = 0
 NUM_TEST_REMAINING = 0
 AVG_RUNTIME = 0
 DATASET_PATH = "../datasets/"
+RESULTS_PATH = "../results/"
+
+NUM_STEPS = 50000
+CHECKPOINT_DIR = "./CheckPoints"
 
 def make_hyperparam_string(l2, dropout_rate, link_state_dim, path_state_dim,
         readout_units, learning_rate, T):
@@ -38,6 +65,7 @@ def make_hyperparam_string(l2, dropout_rate, link_state_dim, path_state_dim,
 def test1(dataset_names):
 
     test_id = 1000
+    completed_tests = load_completed_tests()
 
     hyperparam_string = make_hyperparam_string(0.1, 0.5, 32, 32,
                         256, 0.001, 8)
@@ -47,13 +75,15 @@ def test1(dataset_names):
         for test in range(len(dataset_names)):
 
             if train != test:
-                train_set = dataset_names[train]
-                test_set = dataset_names[test]
+                if test_id not in completed_tests:
 
-                train_set_path = DATASET_PATH + train_set
-                test_set_path = DATASET_PATH + test_set
+                    train_set = dataset_names[train]
+                    test_set = dataset_names[test]
 
-                run_single_test(test_id, train_set_path, test_set_path, None,  hyperparam_string)
+                    train_set_path = DATASET_PATH + train_set
+                    test_set_path = DATASET_PATH + test_set
+
+                    run_single_test(test_id, train_set_path, None, test_set_path,  hyperparam_string)
 
                 test_id +=1
 
@@ -62,7 +92,7 @@ def test1(dataset_names):
     for combo in combos:
         for test in range(len(dataset_names)):
             if dataset_names[test] != combo[0] and dataset_names[test] != combo[1]:
-
+                if test_id not in completed_tests:
                     train_set = combo[0]
                     train_set2 = combo[1]
                     test_set = dataset_names[test]
@@ -75,10 +105,11 @@ def test1(dataset_names):
                             test_set_path,
                             hyperparam_string)
 
-                    test_id += 1
+                test_id += 1
 
 def test2(hyperparams):
 
+    completed_tests = load_completed_tests()
     test_id = 2000
 
     train_set = "nsfnetbw"
@@ -118,11 +149,11 @@ def test2(hyperparams):
                     for ru in ru_range:
                         for lr in lr_range:
                             for T in T_range:
-
-                                hyperparam_string = make_hyperparam_string(l2,
+                                if test_id not in completed_tests:
+                                    hyperparam_string = make_hyperparam_string(l2,
                                         dr, lsd, psd, ru, lr, T)
 
-                                run_single_test(test_id, train_set_path,
+                                    run_single_test(test_id, train_set_path,
                                         train_set2_path, test_set_path,
                                         hyperparam_string)
 
@@ -187,33 +218,42 @@ def calculate_num_tests(inputs_dict):
 
 def run_single_test(test_id, train_set, train_set2, test_set, hyperparam_string):
 
-    out_dir = "./Checkpoints/" + str(test_id)
+    out_dir = os.path.join(CHECKPOINT_DIR, str(test_id))
 
     # log start of test
-    logging.info('Starting test ' + str(test_id))
+    logger.info('Starting test ' + str(test_id))
 
     # start timer
     start_time = time.time()
 
-    print(test_id, train_set, train_set2, test_set, hyperparam_string)
-    time.sleep(15)
-    # TODO call run experiment.sh with subprocess
-    # TODO: Catch the result of subprocess and log an error if necessary
+    # call run experiment.sh with subprocess
+    if train_set2 is None:
+        res = subprocess.call(["sh", "./run_experiment.sh", "train", hyperparam_string,
+            train_set, test_set, out_dir])
+    else:
+        logger.debug("Test Set: {}".format(test_set))
+        res = subprocess.call(["sh", "./run_experiment.sh", "train_multiple",
+            hyperparam_string, train_set, test_set, out_dir, train_set2])
+
+    # Catch the result of subprocess and log an error if necessary
+    if res != 0:
+        logger.error("Error occured with test " + str(test_id))
+        log_test_fail(test_id)
+        return
+
     # stop timer
     runtime = time.time() - start_time
 
-    print(runtime)
 
     global NUM_TESTS_REMAINING
     NUM_TESTS_REMAINING -= 1
 
     global AVG_RUNTIME
     AVG_RUNTIME = (AVG_RUNTIME + runtime)/2
-    logging.debug("AVG_RUNTIME: " + str(AVG_RUNTIME))
-    logging.debug("NUM_TESTS_REMAINING: " + str(NUM_TESTS_REMAINING))
+    logger.debug("AVG_RUNTIME: " + str(AVG_RUNTIME))
+    logger.debug("NUM_TESTS_REMAINING: " + str(NUM_TESTS_REMAINING))
 
     est_time_remaining = AVG_RUNTIME * NUM_TESTS_REMAINING
-    print("EST: " + str(est_time_remaining))
 
     est_seconds = int((est_time_remaining)%60)
     if est_seconds < 10:
@@ -227,21 +267,94 @@ def run_single_test(test_id, train_set, train_set2, test_set, hyperparam_string)
     est_hours = int((est_time_remaining/(60 * 60))%24)
 
 
-    # TODO: Create result dict
+    if create_result_file(test_id, train_set, train_set2, test_set,
+            hyperparam_string, CHECKPOINT_DIR):
+        log_test_completion(test_id)
+    else:
+        log_test_fail(test_id)
 
     # log end of test, time it took and estimate time left
-    logging.info('Test ' + str(test_id) + " finished.  Estimated time remaining: " +
+    logger.info('Test ' + str(test_id) + " finished.  Estimated time remaining: " +
             str(est_hours) + ":" + str(est_minutes) + ":" + str(est_seconds))
 
 
-def create_result_dict():
-    pass
+def create_result_file(test_id, train_set, train_set2, test_set,
+        hyperparam_string, checkpoint_dir):
+
+    eval_res_path = os.path.join(checkpoint_dir, str(test_id),  "eval")
+
+    if not os.path.exists(eval_res_path):
+        logger.error("The checkpoint path does not exist: " + eval_res_path)
+        return False
+
+    try:
+        event_file = os.path.join(eval_res_path, os.listdir(eval_res_path)[0])
+    except:
+        logger.error("The event file does not exist: " + eval_res_path)
+        return False
+
+    outputs = {}
+
+    for event in tf.train.summary_iterator(event_file):
+        for value in event.summary.value:
+            if value.HasField('simple_value'):
+                outputs[value.tag] = value.simple_value
+
+
+    hyperparam_parts = hyperparam_string.split(',')
+
+    inputs = {}
+
+    for part in hyperparam_parts:
+        key = part.split('=')[0]
+        value = part.split('=')[1]
+
+        inputs[key] = value
+
+    inputs["train_set"] = train_set
+    inputs["train_set2"] = train_set2
+    inputs["test_set"] = test_set
+    inputs["num_steps"] = NUM_STEPS
+
+    results_dict = {"inputs": inputs, "outputs": outputs}
+
+    output_file = {test_id, results_dict}
+
+    if not os.path.exists(RESULTS_PATH):
+        os.mkdir(RESULTS_PATH)
+
+    with open(os.path.join(RESULTS_PATH, test_id + ".json")) as outfile:
+        json.dump(output_file, outfile)
+
+    return True
+
+
+
+def log_test_completion(test_id):
+    with open("completed_tests.txt", 'a') as outfile:
+        outfile.write(str(test_id) + "\n")
+
+
+def log_test_fail(test_id):
+    with open("failed_tests.txt", 'a') as outfile:
+        outfile.write(str(test_id) + "\n")
+
+    logger.error("Test " + str(test_id) + " failed. Written to log.")
+
+def load_completed_tests():
+    if os.path.exists("completed_tests.txt"):
+        with open("completed_tests.txt", 'r') as infile:
+            ids = infile.readlines()
+            ids = [int(x.strip()) for x in ids]
+
+        return ids
+    return []
 
 def run_tests(inputs_dict):
 
     global NUM_TESTS
     NUM_TESTS= calculate_num_tests(inputs_dict)
-    logging.debug("NUM_TESTS: " + str(NUM_TESTS))
+    logger.debug("NUM_TESTS: " + str(NUM_TESTS))
     global NUM_TESTS_REMAINING
     NUM_TESTS_REMAINING = NUM_TESTS
 
