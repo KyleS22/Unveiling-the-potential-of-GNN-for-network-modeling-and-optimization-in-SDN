@@ -22,6 +22,9 @@ import random
 import tarfile
 import glob
 
+
+
+
 def genPath(R,s,d,connections):
     while s != d:
         yield s
@@ -313,7 +316,7 @@ hparams = tf.contrib.training.HParams(
 
 
 def train(args):
-    print(args)
+    #print(args)
     tf.logging.set_verbosity('INFO')
 
     if args.hparams:
@@ -494,7 +497,7 @@ def data(args):
 
     for filename in os.listdir(directory):
         if filename.endswith(".tar.gz"):
-            print(filename)
+            #print(filename)
             tf_file = filename.split('.')[0]+".tfrecords"
             tar = tarfile.open(directory+filename, "r:gz")
 
