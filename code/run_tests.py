@@ -48,6 +48,7 @@ NUM_TEST_REMAINING = 0
 
 # The average runtime of one test
 AVG_RUNTIME = 0
+LAST_20_RUNTIMES = []
 
 # The path to where the datasets live
 DATASET_PATH = "../datasets/"
@@ -102,7 +103,6 @@ def test1(dataset_names):
     """
 
     test_id = 1000
-    completed_tests = load_completed_tests()
 
     hyperparam_string = make_hyperparam_string(0.1, 0.5, 32, 32,
                                                256, 0.001, 8)
@@ -112,23 +112,19 @@ def test1(dataset_names):
         for test in range(len(dataset_names)):
 
             if train != test:
-                # Make sure we have not already tried this test previously
-                if test_id not in completed_tests:
 
-                    train_set = dataset_names[train]
-                    test_set = dataset_names[test]
+                train_set = dataset_names[train]
+                test_set = dataset_names[test]
 
-                    train_set_path = DATASET_PATH + train_set
-                    test_set_path = DATASET_PATH + test_set
+                train_set_path = DATASET_PATH + train_set
+                test_set_path = DATASET_PATH + test_set
 
-                    logger.debug(str(test_id) + " " + train_set_path + " " +
-                                 test_set_path + " " + hyperparam_string)
+                logger.debug(str(test_id) + " " + train_set_path + " " +
+                             test_set_path + " " + hyperparam_string)
 
-                    run_single_test(test_id, train_set_path, None,
-                                    test_set_path,  hyperparam_string)
-                else:
-                    logger.info("Test " + str(test_id) +
-                                " already complete. Skipping.")
+                run_single_test(test_id, train_set_path, None,
+                                test_set_path,  hyperparam_string)
+
                 test_id += 1
 
     # Get all the double train experiments
@@ -139,8 +135,6 @@ def test1(dataset_names):
             if (dataset_names[test] != combo[0] and
                     dataset_names[test] != combo[1]):
 
-                # Make sure we have not already run this test
-                if test_id not in completed_tests:
                     train_set = combo[0]
                     train_set2 = combo[1]
                     test_set = dataset_names[test]
@@ -154,11 +148,8 @@ def test1(dataset_names):
 
                     run_single_test(test_id, train_set_path, train_set2_path,
                                     test_set_path, hyperparam_string)
-                else:
-                    logger.info("Test " + str(test_id) +
-                                " already complete. Skipping.")
 
-                test_id += 1
+                    test_id += 1
 
 
 def test2(hyperparams):
@@ -170,7 +161,6 @@ def test2(hyperparams):
     :returns: None
     """
 
-    completed_tests = load_completed_tests()
     test_id = 2000
 
     train_set = "nsfnetbw"
@@ -218,21 +208,15 @@ def test2(hyperparams):
                         for lr in lr_range:
                             for T in T_range:
 
-                                # Make sure we have not already run this test
-                                if test_id not in completed_tests:
-                                    hyperparam_string = \
-                                            make_hyperparam_string(l2, dr,
-                                                                   lsd, psd,
-                                                                   ru, lr, T)
+                                hyperparam_string = \
+                                        make_hyperparam_string(l2, dr,
+                                                               lsd, psd,
+                                                               ru, lr, T)
 
-                                    run_single_test(test_id, train_set_path,
-                                                    train_set2_path,
-                                                    test_set_path,
-                                                    hyperparam_string)
-                                else:
-                                    logger.info("Test " + str(test_id) +
-                                                " already complete.\
-                                                Skipping.")
+                                run_single_test(test_id, train_set_path,
+                                                train_set2_path,
+                                                test_set_path,
+                                                hyperparam_string)
 
                                 test_id += 1
 
@@ -321,6 +305,20 @@ def run_single_test(test_id, train_set, train_set2, test_set,
     :returns: None
     """
 
+    global NUM_TESTS_REMAINING
+
+    tf.reset_default_graph()
+
+    completed_tests = load_completed_tests()
+
+    if test_id in completed_tests:
+        logger.info("Test " + str(test_id) +
+                    " already complete.\
+                    Skipping.")
+
+        NUM_TESTS_REMAINING -= 1
+        return
+
     out_dir = os.path.join(CHECKPOINT_DIR, str(test_id))
 
     # log start of test
@@ -342,7 +340,7 @@ def run_single_test(test_id, train_set, train_set2, test_set,
     # Catch the result of subprocess and log an error if necessary
     if res != 0:
         logger.error("Error occured with test " + str(test_id))
-        log_test_fail(test_id)
+        log_test_fail(test_id, train_set, train_set2, test_set)
         return
 
     # need to give tensorflow a minute to clear memory
@@ -351,15 +349,27 @@ def run_single_test(test_id, train_set, train_set2, test_set,
     runtime = time.time() - start_time
 
     # Update logs and get estimated total runtime rematining
-    global NUM_TESTS_REMAINING
     NUM_TESTS_REMAINING -= 1
 
     global AVG_RUNTIME
+    global LAST_20_RUNTIMES
+
     AVG_RUNTIME = (AVG_RUNTIME + runtime)/2
+
+    if len(LAST_20_RUNTIMES) > 20:
+        LAST_20_RUNTIMES.pop(0)
+
+    LAST_20_RUNTIMES.append(runtime)
+
+    test_average_20 = np.average(LAST_20_RUNTIMES)
+
     logger.debug("AVG_RUNTIME: " + str(AVG_RUNTIME))
     logger.debug("NUM_TESTS_REMAINING: " + str(NUM_TESTS_REMAINING))
 
-    est_time_remaining = AVG_RUNTIME * NUM_TESTS_REMAINING
+
+
+    est_time_remaining = max(AVG_RUNTIME,
+            test_average_20) * NUM_TESTS_REMAINING
 
     est_seconds = int((est_time_remaining) % 60)
     if est_seconds < 10:
@@ -372,6 +382,8 @@ def run_single_test(test_id, train_set, train_set2, test_set,
 
     est_hours = int((est_time_remaining / (60 * 60)) % 24)
 
+    est_days = int((est_time_remaining / (60 * 60 * 24)))
+
     # Create the result file and log success if it worked
     if create_result_file(test_id, train_set, train_set2, test_set,
                           hyperparam_string, CHECKPOINT_DIR):
@@ -380,11 +392,12 @@ def run_single_test(test_id, train_set, train_set2, test_set,
 
     # Otherwise, mark this one down as a failure
     else:
-        log_test_fail(test_id)
+        log_test_fail(test_id, train_set, train_set2, test_set)
 
     # log end of test, time it took and estimate time left
     logger.info('Test ' + str(test_id) +
                 " finished.  Estimated time remaining: " +
+                str(est_days) + " days, " +
                 str(est_hours) + ":" + str(est_minutes) + ":" +
                 str(est_seconds))
 
@@ -473,15 +486,20 @@ def log_test_completion(test_id):
         outfile.write(str(test_id) + "\n")
 
 
-def log_test_fail(test_id):
+def log_test_fail(test_id, train_set, train_set2, test_set):
     """
     Add the test ID to a file containinf failed tests
 
     :param test_id: The ID of the test to mark as failed
     :returns: None
     """
+
+    if train_set2 is None:
+        train_set2 = "None"
+
     with open("failed_tests.txt", 'a') as outfile:
-        outfile.write(str(test_id) + "\n")
+        outfile.write(str(test_id) + ", " + train_set + ", " + train_set2 +
+                ", " + test_set + "\n")
 
     logger.error("Test " + str(test_id) + " failed. Written to log.")
 
