@@ -12,11 +12,15 @@ Description: Do some analysis on the results
 import os
 import json
 import pandas as pd
-import plotly.graph_objects as go
 import sys
 import matplotlib.pyplot as plt
 from pandas.plotting import parallel_coordinates
 
+import matplotlib.style as style
+
+style.use('ggplot')
+
+# The path to where the result.json files are stored
 RESULT_DIR = "../results/"
 
 
@@ -29,13 +33,19 @@ def analyze(test_prefix):
     :returns: None
     """
 
+    # Get the paths to the result files
     result_files = get_result_files(test_prefix)
 
+    # Handle the first set of tests
     if test_prefix == "1":
+
         data = read_test_1_results_to_pandas(result_files)
 
+        output_data_to_table(data, "test1_table.tex")
+
         create_parallel_coord_plot(data)
-        create_bar_chart(data)
+        create_test1_bar_chart(data)
+
 
 def get_result_files(test_prefix):
     """
@@ -101,16 +111,70 @@ def read_test_1_results_to_pandas(result_file_paths):
                            'test_set']].apply(lambda x: '-'.join(x), axis=1)
     df = df.drop(columns=[x for x in cols if "set" in x], axis=1)
 
+    # Make sure the test_label column comes first
+    cols = list(df)
+    cols.insert(0, cols.pop(cols.index('test_label')))
+
+    df = df.ix[:, cols]
+
     return df
 
 
-def create_bar_chart(data):
+def output_data_to_table(data, name):
+    """
+    Output the given dataframe to a .tex file formatted as a table
+
+    :param data: The dataframe containing the data
+    :param name: The name for the tex file
+    :returns: None
+    """
+
+    create_figures_dir()
+
+    out_path = os.path.join(RESULT_DIR, "figures", name)
+
+    with open(out_path, 'w') as outfile:
+        outfile.write(data.to_latex())
+
+
+def create_figures_dir():
+    """
+    Create a figures directory in the results folder, if not already there
+
+    :returns: None
+    """
+
+    figs_path = os.path.join(RESULT_DIR, "figures")
+
+    if not os.path.exists(figs_path):
+        os.mkdir(figs_path)
+
+
+def create_test1_bar_chart(data):
+    """
+    Create a bar chart formatted for data from test1
+
+    :param data: The dataframe with the test1 data
+    :returns: None
+    """
+
+    create_figures_dir()
+
     data_copy = data.copy()
     data_copy = data_copy.set_index('test_label')
-    print(data_copy)
+    data_copy = data_copy.drop(['label/mean', 'mre'], axis=1)
     plt.figure()
-    data_copy.plot.bar(rot=0)
-    plt.savefig("data_bar_chart.png")
+
+    data_copy = data_copy.sort_values('loss', ascending=False)
+    data_copy.plot.bar(rot=10, figsize=(10, 6),
+                       title="Relationships of Results with Different " +
+                             "Training Sets",
+                       colormap="RdYlGn")
+
+    out_path = os.path.join(RESULT_DIR, "figures", "test1_bar_chart.png")
+
+    plt.savefig(out_path)
+
 
 def create_parallel_coord_plot(data):
     """
@@ -119,40 +183,18 @@ def create_parallel_coord_plot(data):
     :param data: {% A parameter %}
     :returns: {% A thing %}
     """
-    plt.figure()
-    parallel_coordinates(data, 'test_label')
-    plt.savefig("data_parcoord_plot.png")
-    #fig = go.Figure(data=go.Parcoords(
-    #    line=dict(
-    #        color=data['index'],
-    #        colorscale='Electric',
-    #        showscale=True,
-    #        cmin=0,
-    #        cmax=len(data)),
-    #    dimensions=list([
-    #                dict(
-    #                    label='Label/Mean', values=data['label/mean']),
-    #                dict(
-    #                    label='Loss', values=data['loss']),
-    #                dict(
-    #                    label='MAE', values=data['mae']),
-    #                dict(
-    #                    label='MRE', values=data['mre']),
-    #                dict(
-    #                    label='Prediction Mean',
-    #                    values=data['prediction/mean']),
-    #                dict(
-    #                    label='Streaming Pearson Correlation',
-    #                    values=data['rho']),
-    #                ])
-    #    ))
 
-    #fig.update_layout(
-    #        plot_bgcolor='white',
-    #        paper_bgcolor='white'
-    #        )
-    #print("Showing plot")
-    #fig.show()
+    create_figures_dir()
+
+    plt.figure(figsize=(10, 6))
+    plt.title("Parallel Coordinates Plot for Results With Different " +
+              "Training Sets")
+
+    parallel_coordinates(data, 'test_label', colormap="RdYlGn")
+
+    out_path = os.path.join(RESULT_DIR, "figures", "test1_parcoord_plot.png")
+
+    plt.savefig(out_path)
 
 
 if __name__ == "__main__":

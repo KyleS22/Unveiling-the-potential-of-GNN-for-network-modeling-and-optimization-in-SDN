@@ -8,3 +8,4 @@ datasets/*.tar.gz
 code/completed_tests.txt
 code/failed_tests.txt
 code/test_runner.log
+results/*
