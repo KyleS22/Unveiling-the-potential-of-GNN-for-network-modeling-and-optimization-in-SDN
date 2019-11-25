@@ -49,7 +49,7 @@ def analyze(test_prefix):
     elif test_prefix == "2":
 
         data = read_test_2_results_to_pandas(result_files)
-        data = reduce_df(data, dropout_rate=0.2)
+        data = reduce_df(data)
 
         output_data_to_table(data, "test2_table.tex")
         create_test2_charts(data)
