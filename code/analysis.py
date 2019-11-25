@@ -52,7 +52,7 @@ def analyze(test_prefix):
         data = reduce_df(data, dropout_rate=0.2)
 
         output_data_to_table(data, "test2_table.tex")
-        create_test2_bar_charts(data)
+        create_test2_charts(data)
     else:
         print("Invalid test prefix")
 
@@ -175,16 +175,19 @@ def create_test1_bar_chart(data):
     data_copy = data_copy.drop(['label/mean', 'mre'], axis=1)
     plt.figure()
 
+
     data_copy = data_copy.sort_values('loss', ascending=False)
-    data_copy.plot.bar(rot=10, figsize=(10, 6),
+    ax = data_copy.plot.bar(rot=10, figsize=(10, 6),
                        title="Relationships of Results with Different " +
                              "Training Sets",
                        colormap="RdYlGn")
 
+    ax.set_ylim(-1, 5)
+
     out_path = os.path.join(RESULT_DIR, "figures", "test1_bar_chart.png")
 
     plt.savefig(out_path)
-
+    plt.cla()
 
 def create_test1_parallel_coord_plot(data):
     """
@@ -200,12 +203,14 @@ def create_test1_parallel_coord_plot(data):
     plt.title("Parallel Coordinates Plot for Results With Different " +
               "Training Sets")
 
+    plt.ylim(-1, 5)
+
     parallel_coordinates(data, 'test_label', colormap="RdYlGn")
 
     out_path = os.path.join(RESULT_DIR, "figures", "test1_parcoord_plot.png")
 
     plt.savefig(out_path)
-
+    plt.cla()
 
 def read_test_2_results_to_pandas(result_file_paths):
     """
@@ -265,7 +270,7 @@ def reduce_df(data, dropout_rate=0.6):
     return reduced
 
 
-def create_test2_bar_charts(data):
+def create_test2_charts(data):
     """
     Create bar charts for the data in test2
 
@@ -280,7 +285,7 @@ def create_test2_bar_charts(data):
         df = data.loc[data['link_state_dim'] == link_state_dim]
 
         create_test2_bar_chart(df)
-
+        create_test2_parcoords(df)
 
 def create_test2_bar_chart(data):
     """
@@ -313,9 +318,44 @@ def create_test2_bar_chart(data):
     out_path = os.path.join(RESULT_DIR, "figures", file_name)
 
     plt.savefig(out_path)
+    plt.cla()
 
-# TODO: Create test2 parallell coords chart
 
+def create_test2_parcoords(data):
+    """
+    Create a parallel coordinates plot for the test2 case
+
+    :param data: A dataframe
+    :returns: None
+
+
+    """
+
+    create_figures_dir()
+
+    # Get link_state_dim
+    link_state_dim = str(data['link_state_dim'].tolist()[0])
+
+    # Convert path_state_dim to int32 for sorting
+    data = data.astype({'path_state_dim': 'int32'})
+
+    data = data.drop(['dropout_rate',
+                      'link_state_dim'], axis=1)
+
+    data = data.sort_values('path_state_dim', ascending=True)
+
+    plt.figure(figsize=(10, 6))
+    plt.ylim(-1, 2.5)
+    plt.title("Path-State-Dim behaviour for Link-State-Dim = " +
+              link_state_dim)
+
+    parallel_coordinates(data, 'path_state_dim', colormap="RdYlGn")
+
+    file_name = "test2_parcoord_plot_" + link_state_dim + ".png"
+    out_path = os.path.join(RESULT_DIR, "figures", file_name)
+
+    plt.savefig(out_path)
+    plt.cla()
 
 if __name__ == "__main__":
 
