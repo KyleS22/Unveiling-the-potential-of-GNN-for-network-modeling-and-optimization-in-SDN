@@ -43,8 +43,18 @@ def analyze(test_prefix):
 
         output_data_to_table(data, "test1_table.tex")
 
-        create_parallel_coord_plot(data)
+        create_test1_parallel_coord_plot(data)
         create_test1_bar_chart(data)
+
+    elif test_prefix == "2":
+
+        data = read_test_2_results_to_pandas(result_files)
+        data = reduce_df(data, dropout_rate=0.2)
+
+        output_data_to_table(data, "test2_table.tex")
+        create_test2_bar_charts(data)
+    else:
+        print("Invalid test prefix")
 
 
 def get_result_files(test_prefix):
@@ -176,7 +186,7 @@ def create_test1_bar_chart(data):
     plt.savefig(out_path)
 
 
-def create_parallel_coord_plot(data):
+def create_test1_parallel_coord_plot(data):
     """
     Creates a parallel coordinates plot from the data
 
@@ -195,6 +205,116 @@ def create_parallel_coord_plot(data):
     out_path = os.path.join(RESULT_DIR, "figures", "test1_parcoord_plot.png")
 
     plt.savefig(out_path)
+
+
+def read_test_2_results_to_pandas(result_file_paths):
+    """
+    Reads in the list of files and converts them into a Pandas Dataframe
+
+    :param result_file_path: A list of paths to result files
+    :returns: A Pandas Dataframe representing the data
+    """
+
+    cols = ["dropout_rate", "link_state_dim", "path_state_dim", "label/mean",
+            "loss", "mae", "mre", "prediction/mean", "rho"]
+
+    data_lists = []
+
+    for path in result_file_paths:
+
+        with open(path) as json_file:
+            data = json.load(json_file)
+            test_id = os.path.split(path)[-1]
+            test_id = os.path.splitext(test_id)[0]
+
+            row = []
+
+            for i in range(len(cols)):
+
+                try:
+                    row.append(data[test_id]["inputs"][cols[i]])
+                except Exception as e:
+                    e = None
+                    e
+                    row.append(data[test_id]["outputs"][cols[i]])
+
+            data_lists.append(row)
+
+    df = pd.DataFrame(data_lists, columns=cols)
+    df.replace(to_replace=[None], value="None", inplace=True)
+
+    df = df.sort_values(by=['dropout_rate', 'link_state_dim', 'path_state_dim',
+                            'mae'])
+
+    return df
+
+
+def reduce_df(data, dropout_rate=0.6):
+    """
+    Reduce the dataframe to a smaller dataframe containing only entries with
+    the given dropout_rate
+
+    :param data: The dataframe to reduce
+    :param dropout_rate: The dropout rate to use  The default value is 0.5.
+    :returns: The reduced dropout rate
+    """
+
+    reduced = data.loc[data['dropout_rate'] == str(dropout_rate)]
+    reduced = reduced.sort_values(by=['mae'])
+
+    return reduced
+
+
+def create_test2_bar_charts(data):
+    """
+    Create bar charts for the data in test2
+
+    :param data: A dataframe containing the data
+    :returns: None
+    """
+
+    # Get the unique link_state values
+    link_state_dims = set(data['link_state_dim'].tolist())
+
+    for link_state_dim in link_state_dims:
+        df = data.loc[data['link_state_dim'] == link_state_dim]
+
+        create_test2_bar_chart(df)
+
+
+def create_test2_bar_chart(data):
+    """
+    Create a single bar chart for the test2 case
+
+    :param data: A dataframe for a single link_state_dim
+    :returns: None
+
+
+    """
+    create_figures_dir()
+
+    # all the link state dims should be the same, so we just grab one
+    link_state_dim = str(data['link_state_dim'].tolist()[0])
+
+    # The integers are strings for some reason
+    data = data.astype({'path_state_dim': 'int32'})
+    data = data.drop(['label/mean', 'mre'], axis=1)
+    data = data.set_index('path_state_dim')
+
+    plt.figure()
+
+    data = data.sort_values('path_state_dim', ascending=True)
+    ax = data.plot.bar(rot=0, figsize=(10, 6),
+                       title="Results for Link State Dim = " + link_state_dim,
+                       colormap="RdYlGn")
+
+    ax.set_ylim(-1, 5)
+    file_name = "test2_bar_chart_" + link_state_dim + ".png"
+    out_path = os.path.join(RESULT_DIR, "figures", file_name)
+
+    plt.savefig(out_path)
+
+# TODO: Create test2 parallell coords chart
 
 
 if __name__ == "__main__":
