@@ -178,12 +178,11 @@ def create_test1_bar_chart(data):
     data_copy = data_copy.drop(['label/mean', 'mre'], axis=1)
     plt.figure()
 
-
     data_copy = data_copy.sort_values('loss', ascending=False)
     ax = data_copy.plot.bar(rot=10, figsize=(10, 8),
-                       title="Relationships of Results with Different " +
-                             "Training Sets",
-                       colormap="RdYlGn")
+                            title="Relationships of Results with Different " +
+                                  "Training Sets",
+                            colormap="RdYlGn")
 
     ax.set_ylim(-1, 5)
     ax.set_xlabel("Datasets (Train1 - Train2 - Eval)")
@@ -191,6 +190,7 @@ def create_test1_bar_chart(data):
 
     plt.savefig(out_path)
     plt.cla()
+
 
 def create_test1_parallel_coord_plot(data):
     """
@@ -214,6 +214,7 @@ def create_test1_parallel_coord_plot(data):
 
     plt.savefig(out_path)
     plt.cla()
+
 
 def read_test_2_results_to_pandas(result_file_paths):
     """
@@ -266,15 +267,9 @@ def reduce_df(data, dropout_rate=0.6):
     :param dropout_rate: The dropout rate to use  The default value is 0.5.
     :returns: The reduced dropout rate
     """
-    print(dropout_rate)
-    print(data.dtypes)
+    reduced = data.loc[round(data['dropout_rate']
+                             .astype(str).astype(float), 2) == dropout_rate]
 
-
-
-
-    reduced = data.loc[round(data['dropout_rate'].astype(str).astype(float),2) == dropout_rate]
-
-    print(reduced)
     reduced = reduced.sort_values(by=['mae'])
 
     return reduced
@@ -296,6 +291,7 @@ def create_test2_charts(data):
 
         create_test2_bar_chart(df)
         create_test2_parcoords(df)
+
 
 def create_test2_bar_chart(data):
     """
@@ -367,13 +363,19 @@ def create_test2_parcoords(data):
     plt.savefig(out_path)
     plt.cla()
 
+
 def create_test2_heatmap(data):
+    """
+    Create a heatmap showing the mae for each link_state and path_state value
+
+    :param data: A dataframe containing the results from test2
+    :returns: A heatmap will be saved to the RESULTS/figures dir
+    """
 
     data = data.drop(['dropout_rate', 'label/mean', 'loss', 'prediction/mean',
-        'rho', 'mre'], axis=1)
+                      'rho', 'mre'], axis=1)
     data = data.astype({"path_state_dim": int, "link_state_dim": int, "mae":
-        np.float32})
-
+                        np.float32})
 
     Index = [i for i in range(8, 64 + 8, 8)]
     Cols = Index
@@ -385,20 +387,23 @@ def create_test2_heatmap(data):
         path_state_dim = int(row['path_state_dim'])
         mae = row['mae']
 
-        mae_data[int((link_state_dim / 8) - 1)][int((path_state_dim / 8) - 1)] = mae
+        i = int((link_state_dim / 8) - 1)
+        j = int((path_state_dim / 8) - 1)
+
+        mae_data[i][j] = mae
 
     heat_df = pd.DataFrame(mae_data, index=Index, columns=Cols)
 
     plt.figure(figsize=(10, 6))
     ax = sns.heatmap(heat_df, annot=True, linewidths=.5,
-            norm=LogNorm(np.min(mae_data),
-        np.max(mae_data)))
+                     norm=LogNorm(np.min(mae_data),
+                                  np.max(mae_data)))
 
     bottom, top = ax.get_ylim()
     ax.set_ylim(bottom + 0.5, top - 0.5)
     ax.xaxis.tick_top()
-    ax.set_title("Heatmap of MAE for Different Values of path_state_dim and"+
-            "link_state_dim")
+    ax.set_title("Heatmap of MAE for Different Values of path_state_dim and" +
+                 "link_state_dim")
 
     ax.set_xlabel("link_state_dim")
     ax.set_ylabel("path_state_dim")
@@ -406,8 +411,8 @@ def create_test2_heatmap(data):
     file_name = "test2_heatmap.png"
     out_path = os.path.join(RESULT_DIR, "figures", file_name)
 
-
     plt.savefig(out_path)
+
 
 if __name__ == "__main__":
 
