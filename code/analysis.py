@@ -16,8 +16,11 @@ import sys
 import matplotlib.pyplot as plt
 from pandas.plotting import parallel_coordinates
 
-import matplotlib.style as style
+from matplotlib.colors import LogNorm
 
+import matplotlib.style as style
+import numpy as np
+import seaborn as sns
 style.use('ggplot')
 
 # The path to where the result.json files are stored
@@ -50,9 +53,9 @@ def analyze(test_prefix):
 
         data = read_test_2_results_to_pandas(result_files)
         data = reduce_df(data)
-
         output_data_to_table(data, "test2_table.tex")
         create_test2_charts(data)
+        create_test2_heatmap(data)
     else:
         print("Invalid test prefix")
 
@@ -177,13 +180,13 @@ def create_test1_bar_chart(data):
 
 
     data_copy = data_copy.sort_values('loss', ascending=False)
-    ax = data_copy.plot.bar(rot=10, figsize=(10, 6),
+    ax = data_copy.plot.bar(rot=10, figsize=(10, 8),
                        title="Relationships of Results with Different " +
                              "Training Sets",
                        colormap="RdYlGn")
 
     ax.set_ylim(-1, 5)
-
+    ax.set_xlabel("Datasets (Train1 - Train2 - Eval)")
     out_path = os.path.join(RESULT_DIR, "figures", "test1_bar_chart.png")
 
     plt.savefig(out_path)
@@ -263,8 +266,15 @@ def reduce_df(data, dropout_rate=0.6):
     :param dropout_rate: The dropout rate to use  The default value is 0.5.
     :returns: The reduced dropout rate
     """
+    print(dropout_rate)
+    print(data.dtypes)
 
-    reduced = data.loc[data['dropout_rate'] == str(dropout_rate)]
+
+
+
+    reduced = data.loc[round(data['dropout_rate'].astype(str).astype(float),2) == dropout_rate]
+
+    print(reduced)
     reduced = reduced.sort_values(by=['mae'])
 
     return reduced
@@ -356,6 +366,48 @@ def create_test2_parcoords(data):
 
     plt.savefig(out_path)
     plt.cla()
+
+def create_test2_heatmap(data):
+
+    data = data.drop(['dropout_rate', 'label/mean', 'loss', 'prediction/mean',
+        'rho', 'mre'], axis=1)
+    data = data.astype({"path_state_dim": int, "link_state_dim": int, "mae":
+        np.float32})
+
+
+    Index = [i for i in range(8, 64 + 8, 8)]
+    Cols = Index
+
+    mae_data = np.zeros((8, 8))
+
+    for _, row in data.iterrows():
+        link_state_dim = int(row['link_state_dim'])
+        path_state_dim = int(row['path_state_dim'])
+        mae = row['mae']
+
+        mae_data[int((link_state_dim / 8) - 1)][int((path_state_dim / 8) - 1)] = mae
+
+    heat_df = pd.DataFrame(mae_data, index=Index, columns=Cols)
+
+    plt.figure(figsize=(10, 6))
+    ax = sns.heatmap(heat_df, annot=True, linewidths=.5,
+            norm=LogNorm(np.min(mae_data),
+        np.max(mae_data)))
+
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom + 0.5, top - 0.5)
+    ax.xaxis.tick_top()
+    ax.set_title("Heatmap of MAE for Different Values of path_state_dim and"+
+            "link_state_dim")
+
+    ax.set_xlabel("link_state_dim")
+    ax.set_ylabel("path_state_dim")
+
+    file_name = "test2_heatmap.png"
+    out_path = os.path.join(RESULT_DIR, "figures", file_name)
+
+
+    plt.savefig(out_path)
 
 if __name__ == "__main__":
 
